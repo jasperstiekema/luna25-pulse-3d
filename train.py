@@ -3,7 +3,7 @@
 Script for training a Pulse-3D to classify a pulmonary nodule as benign or malignant.
 """
 from models.model_2d import ResNet18
-from models.pulse_3d import Pulse3D
+from models.Pulse3D import Pulse3D
 from dataloader import get_data_loader
 import logging
 import numpy as np

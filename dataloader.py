@@ -235,7 +235,7 @@ class CTCaseDataset(data.Dataset):
 
         annotation_id = pd.AnnotationID
 
-        image_path = self.data_dir / "image" / f"{annotation_id}.npy"
+        image_path = self.data_dir / "image" / f"{annotation_id}_cropped_block.npy"
         metadata_path = self.data_dir / "metadata" / f"{annotation_id}.npy"
 
         # numpy memory map data/image case file

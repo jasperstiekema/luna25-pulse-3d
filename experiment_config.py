@@ -7,19 +7,19 @@ class Configuration(object):
 
         # Working directory
         # self.WORKDIR = Path("/home/constantin/Work/LUNA25/luna25-pulse-3d-v3")
-        self.WORKDIR = Path("/opt/app/")
+        self.WORKDIR = Path("D:/LUNA25/Pulse3D")
        
         self.RESOURCES = self.WORKDIR / "resources"
         # Starting weights for the I3D model
         self.MODEL_RGB_I3D = (
-            self.RESOURCES / "model_rgb.pth"
+            "model_rgb.pth"
         )
         
         # Data parameters
         # Path to the nodule blocks folder provided for the LUNA25 training data. 
-        self.DATADIR = Path("../dataset/luna25_nodule_blocks")
+        self.DATADIR = Path("D:/LUNA25/luna25_nodule_blocks")
         # Path to the folder containing the CSVs for training and validation.
-        self.CSV_DIR = Path("../dataset/luna25_csv")
+        self.CSV_DIR = Path("D:/LUNA25/luna25_csv")
         # We provide an NLST dataset CSV, but participants are responsible for splitting the data into training and validation sets.
         self.CSV_DIR_TRAIN = self.CSV_DIR / "train.csv" # Path to the training CSV
         self.CSV_DIR_VALID = self.CSV_DIR / "valid.csv" # Path to the validation CSV
