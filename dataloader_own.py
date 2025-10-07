@@ -219,7 +219,7 @@ class CTCaseDataset(data.Dataset):
 
         self.data_dir = Path(data_dir)
         self.dataset = dataset
-        self.patch_size = config.PATCH_SIZE
+        self.patch_size = (64,64,64)
         self.rotations = rotations
         self.translations = translations
         self.size_px = size_px
@@ -287,6 +287,7 @@ class CTCaseDataset(data.Dataset):
             "image": torch.from_numpy(patch),
             "label": target.long(),
             "ID": annotation_id,
+            "path": str(image_path)
         }
 
         return sample
