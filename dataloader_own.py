@@ -277,10 +277,6 @@ class CTCaseDataset(data.Dataset):
 
         # ensure same datatype...
         patch = patch.astype(np.float32)
-
-        # clip and scale...
-        patch = clip_and_scale(patch)
-
         target = torch.ones((1,)) * label
 
         sample = {
