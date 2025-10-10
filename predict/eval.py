@@ -23,11 +23,12 @@ def main():
     )
 
     model = Pulse3D(num_classes=1, input_channels=1, freeze_bn=True)
+    """
     model.load_state_dict(
         torch.load(
             r"D:\PULSE\results\LUNA25-pulse-3D-20251006\best_metric_model.pth",
             map_location="cpu"), strict=True)
-    
+    """
     device = torch.device("cpu")
     model = model.to(device)
     model.eval()
@@ -68,9 +69,9 @@ def main():
         "prob_cancer": y_pred,
         "true_label": y_true,
     })
-    results_df.to_csv("D:/PULSE/pulse3d_predictions.csv", index=False)
+    results_df.to_csv("D:/PULSE/nopre_predictions.csv", index=False)
 
-    print("Evaluation complete and predictions saved to D:/PULSE/pulse3d_predictions.csv")
+    print("Evaluation complete and predictions saved to D:/PULSE/?.csv")
     print(f"Input slices saved in: {output_image_dir}")
     print(results_df.head())
 

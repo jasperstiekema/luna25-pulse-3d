@@ -40,13 +40,14 @@ def plot_confusion_matrix(labels, preds, threshold):
 # --- Main Script ---
 
 # Path to the CSV file
-csv_path = r"D:/PULSE/pulse3d_predictions.csv"
+csv_path = r"D:/PULSE/results classification/nopre_predictions.csv"
 radius_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
 
 # Load files
 df = pd.read_csv(csv_path)
 df_radius = pd.read_csv(radius_path)
-
+radiuses = df_radius["radius_cm"].values
+print(f"Radius stats: mean={radiuses.mean():.4f}, std={radiuses.std():.4f}, min={radiuses.min():.4f}, max={radiuses.max():.4f}")
 # Merge radius info
 df = df.merge(df_radius[['Studienummer_Algemeen', 'radius_cm']],
               left_on='patient_id',

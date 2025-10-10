@@ -75,9 +75,9 @@ def main():
         "prob_cancer": y_pred,
         "true_label": y_true,
     })
-    results_df.to_csv("D:/PULSE/pulse3d_luna_predictions.csv", index=False)
+    results_df.to_csv("D:/PULSE/results classification/pulse3d_luna_predictions.csv", index=False)
 
-    print("✅ Evaluation complete and predictions saved to D:/PULSE/pulse3d_luna_predictions.csv")
+    print("✅ Evaluation complete and predictions saved to D:/PULSE/results classification/pulse3d_luna_predictions.csv")
     print(f"Preprocessed input tensors saved in: {output_image_dir}")
     print(results_df.head())
 
