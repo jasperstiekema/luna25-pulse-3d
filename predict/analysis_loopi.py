@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score
 
 # --- Paths ---
-csv_path = r"D:\PULSE\results classification\multi_model_predictions_5e-6.csv"
+csv_path = r"D:\PULSE\results classification\multi_model_predictions_1e-4.csv"
 maxdist_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"  # CSV with max_dist_mm column
 
 # --- Load CSV files ---
@@ -33,7 +33,7 @@ if df['max_dist_mm'].count() > 0:
     print(f"Max_dist range: {df['max_dist_mm'].min():.2f} - {df['max_dist_mm'].max():.2f} mm")
 
 # --- Filter options ---
-filter_by_dist = True  # Set to True to filter by distance, False to keep all
+filter_by_dist = False  # Set to True to filter by distance, False to keep all
 max_dist_threshold = 25.0  # mm, only used if filter_by_dist is True
 
 if filter_by_dist:

@@ -1,34 +1,40 @@
 import torch
-import os
+import os, sys
 import numpy as np
 import matplotlib.pyplot as plt
 from pandas import read_csv, DataFrame
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.Pulse3D import Pulse3D
 from dataloader_own import get_data_loader
 
+FOV = 100
+model_path = r"D:\PULSE\results\fov check\lr_1e-5_100mm_64px-3D-20251010\0.7909_model.pth"
+csv_dir = r"D:/DATA/LBxSF_labeled_segmented_radius.csv"
+data_dir = rf"D:/DATA/own dataset crops fov {FOV}"
+output_dir = rf"D:/PULSE/inputs_{FOV}mm"
+csv_output_dir = rf"D:/PULSE/results classification/own_predictions_{FOV}mm.csv"
 
 def main():
-    df = read_csv("D:/DATA/LBxSF_labeled_segmented_radius.csv")
+    df = read_csv(csv_dir)
 
     data_loader = get_data_loader(
-        "D:/DATA/own dataset pulse crops",
+        data_dir,
         df,
         mode="3D",
         workers=4,
         batch_size=1,
         rotations=None,
         translations=None,
-        size_mm=50,
+        size_mm=FOV,
         size_px=64,
     )
 
     model = Pulse3D(num_classes=1, input_channels=1, freeze_bn=True)
-    """
+
     model.load_state_dict(
         torch.load(
-            r"D:\PULSE\results\LUNA25-pulse-3D-20251006\best_metric_model.pth",
+            model_path,
             map_location="cpu"), strict=True)
-    """
     device = torch.device("cpu")
     model = model.to(device)
     model.eval()
@@ -37,7 +43,7 @@ def main():
     y_true = []
     patient_ids = []
 
-    output_image_dir = r"D:/PULSE/inputs"
+    output_image_dir = output_dir
     os.makedirs(output_image_dir, exist_ok=True)
 
     with torch.no_grad():
@@ -69,9 +75,9 @@ def main():
         "prob_cancer": y_pred,
         "true_label": y_true,
     })
-    results_df.to_csv("D:/PULSE/nopre_predictions.csv", index=False)
+    results_df.to_csv(csv_output_dir, index=False)
 
-    print("Evaluation complete and predictions saved to D:/PULSE/?.csv")
+    print(f"Evaluation complete and predictions saved to {csv_output_dir}")
     print(f"Input slices saved in: {output_image_dir}")
     print(results_df.head())
 

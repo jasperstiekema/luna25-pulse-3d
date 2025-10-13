@@ -2,24 +2,32 @@ import torch
 import os
 import numpy as np
 from pandas import read_csv, DataFrame
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.Pulse3D import Pulse3D
 from dataloader import get_data_loader
 
+FOV = 100
+model_path = r"D:\PULSE\results\fov check\lr_1e-5_100mm_64px-3D-20251010\0.7909_model.pth"
+output_dir = rf"D:/PULSE/luna_inputs_{FOV}mm"
+csv_dir = r"D:/LUNA25/luna25_csv/test.csv"
+data_dir = r"D:/LUNA25/luna25_nodule_blocks/test"
+csv_output_dir = rf"D:/PULSE/results classification/luna_predictions_{FOV}mm.csv"
 
 def main():
     # --- Load LUNA25 CSV ---
-    df = read_csv("D:/LUNA25/luna25_csv/test.csv")
+    df = read_csv(csv_dir)
 
     # --- Initialize dataloader ---
     data_loader = get_data_loader(
-        "D:/LUNA25/luna25_nodule_blocks/test",
+        data_dir,
         df,
         mode="3D",
         workers=4,
         batch_size=2,
         rotations=None,
         translations=None,
-        size_mm=50,
+        size_mm=FOV,
         size_px=64,
     )
 
@@ -27,7 +35,7 @@ def main():
     model = Pulse3D(num_classes=1, input_channels=1, freeze_bn=True)
     model.load_state_dict(
         torch.load(
-            r"D:\PULSE\results\LUNA25-pulse-3D-20251006\best_metric_model.pth",
+            model_path,
             map_location="cpu"
         ),
         strict=True
@@ -41,7 +49,7 @@ def main():
     y_pred, y_true, ids = [], [], []
 
     # --- Directory to save preprocessed inputs ---
-    output_image_dir = r"D:/PULSE/luna_inputs"
+    output_image_dir = output_dir
     os.makedirs(output_image_dir, exist_ok=True)
 
     # --- Inference loop ---
@@ -75,9 +83,9 @@ def main():
         "prob_cancer": y_pred,
         "true_label": y_true,
     })
-    results_df.to_csv("D:/PULSE/results classification/pulse3d_luna_predictions.csv", index=False)
+    results_df.to_csv(csv_output_dir, index=False)
 
-    print("✅ Evaluation complete and predictions saved to D:/PULSE/results classification/pulse3d_luna_predictions.csv")
+    print("✅ Evaluation complete and predictions saved to D:/PULSE/results classification/luna_predictions_70mm.csv")
     print(f"Preprocessed input tensors saved in: {output_image_dir}")
     print(results_df.head())
 
