@@ -7,7 +7,7 @@ csv_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
 df = pd.read_csv(csv_path)
 
 # Extract and clean radius data
-radius = df['max_dist_mm'].dropna().values
+radius = df['radius_mm'].dropna().values
 diameter = radius * 2  # Convert radius to diameter if needed
 # Sort diameter values
 sorted_diameter = np.sort(diameter)
@@ -32,10 +32,10 @@ for t, c in zip(thresholds, counts):
              color='red', ha='right', va='bottom', fontsize=10, fontweight='bold')
 
 # Labels and title
-plt.title('Sorted Max 1D dist with Threshold Lines')
-plt.xlabel('ROI index (sorted by max 1D dist)')
-plt.ylabel('Max 1D dist (mm)')
+plt.title('Sorted ROI Diameters with Threshold Lines')
+plt.xlabel('ROI index (sorted by diameter)')
+plt.ylabel('Max distance ROI–edge (mm)')
 plt.grid(alpha=0.4)
-plt.legend(['Max 1D dist'], loc='upper left')
+plt.legend(['ROI diameter'], loc='upper left')
 plt.tight_layout()
 plt.show()

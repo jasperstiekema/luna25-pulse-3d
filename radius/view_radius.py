@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
-data_dir = r"D:\DATA\own dataset crops fov 100\images"
+data_dir = r"D:\PULSE\visualization\inputs_50mm"
 csv_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
 
 df = pd.read_csv(csv_path)

@@ -40,7 +40,7 @@ def plot_confusion_matrix(labels, preds, threshold):
 # --- Main Script ---
 
 # Path to the CSV file
-csv_path = r"D:/PULSE/results classification/luna_predictions_100mm.csv"
+csv_path = r"D:/PULSE/results classification/lidc_predictions_50mm.csv"
 
 # Load files
 df = pd.read_csv(csv_path)

@@ -2,148 +2,127 @@ import os
 import numpy as np
 import pandas as pd
 import pylidc as pl
-from pathlib import Path
+from pylidc.utils import consensus
 from tqdm import tqdm
-import pickle
-
-# --- Compatibility for newer NumPy versions ---
 if not hasattr(np, "int"):
     np.int = int
 if not hasattr(np, "bool"):
     np.bool = bool
 
-# --- CONFIG ---
+# CONFIG
 os.environ["PYLIDC_DATA_PATH"] = r"D:\DICOM\lidc dataset\manifest-1600709154662\LIDC-IDRI select"
-input_csv = r"D:\LIDC_prepared\lidc_all_nodules_radius.csv"
+output_csv = r"D:\LIDC_prepared\lidc_all_nodules_radius.csv"
 
-# Output directories for each crop size
-crop_configs = [
-    {"size_mm": 50, "output_dir": r"D:\LIDC_prepared\lidc_crop_50"},
-    {"size_mm": 70, "output_dir": r"D:\LIDC_prepared\lidc_crop_70"},
-    {"size_mm": 100, "output_dir": r"D:\LIDC_prepared\lidc_crop_100"},
-]
+# Initialize storage
+records = []
 
-# Fixed voxel dimensions
-CROP_VOXELS = 64
+# Query all scan
+scans = pl.query(pl.Scan).all()
+print(f"Found {len(scans)} scans")
 
-# --- Create output directories ---
-for config in crop_configs:
-    os.makedirs(os.path.join(config["output_dir"], "images"), exist_ok=True)
-    os.makedirs(os.path.join(config["output_dir"], "metadata"), exist_ok=True)
+# Helper functions
+def compute_radius_metrics(mask, spacing):
+    """
+    Compute two distance metrics:
+      - radius_mm: max 3D distance from centroid to any voxel (mm)
+      - max_dist_mm: max 1D distance (along any single axis) in mm
+    """
+    coords = np.argwhere(mask)
+    if coords.size == 0:
+        return np.nan, np.nan
 
-# --- Load CSV ---
-df = pd.read_csv(input_csv)
-print(f"Loaded {len(df)} nodules from CSV")
+    centroid = np.mean(coords, axis=0)
+    # Convert voxel distances to mm
+    diffs = (coords - centroid) * spacing
+    dist_3d = np.linalg.norm(diffs, axis=1)
+    dist_1d = np.max(np.abs(diffs), axis=0)
 
-# --- Filter for nodules with 3+ radiologists ---
-df = df[df["num_radiologists"] >= 3]
-print(f"Filtered to {len(df)} nodules with 3+ radiologists")
+    radius_mm = float(np.max(dist_3d))  # Euclidean max distance
+    max_dist_mm = float(np.max(dist_1d))  # Max along one axis
 
-# --- Helper function to safely parse tuples from CSV ---
-def parse_tuple(s):
-    """Parse string representation of tuple back to tuple of floats"""
-    if isinstance(s, str):
-        # Remove parentheses and split by comma
-        values = s.strip("()").split(",")
-        return tuple(float(v.strip()) for v in values)
-    return s
+    return radius_mm, max_dist_mm
 
-# --- Process each nodule ---
-for idx, row in tqdm(df.iterrows(), total=len(df), desc="Cropping nodules"):
-    pid = row["patient_id"]
-    nid = row["nodule_id"]
-    
-    # Parse center coordinates and spacing from CSV
-    center_mm_zyx = parse_tuple(row["center_mm_zyx"])
-    spacing_zyx_mm = parse_tuple(row["spacing_zyx_mm"])
-    
-    # Load the scan
+# Loop through all scans
+for s_idx, scan in enumerate(tqdm(scans, desc="Processing scans")):
+    pid = scan.patient_id
+
     try:
-        scan = pl.query(pl.Scan).filter(pl.Scan.patient_id == pid).first()
-        if scan is None:
-            print(f"⚠️ Skipping {pid}: scan not found")
-            continue
-        
         vol = scan.to_volume()
     except Exception as e:
-        print(f"⚠️ Skipping {pid}: could not load volume ({e})")
+        print(f"Skipping {pid}: could not load volume ({e})")
         continue
-    
-    # Get original spacing
-    orig_spacing = np.array(spacing_zyx_mm)
-    
-    # Process each crop size
-    for config in crop_configs:
-        size_mm = config["size_mm"]
-        output_dir = config["output_dir"]
-        
-        # Calculate the target spacing (mm per voxel)
-        target_spacing = np.array([size_mm/CROP_VOXELS, size_mm/CROP_VOXELS, size_mm/CROP_VOXELS])
-        
-        # Calculate how many voxels we need in original space
-        half_size_mm = size_mm / 2.0
-        half_size_voxels_orig = np.ceil(half_size_mm / orig_spacing).astype(int)
-        
-        # Convert center from mm to voxel coordinates in original space
-        center_voxel_zyx = parse_tuple(row["center_voxel_zyx"])
-        center_voxel = np.array([int(np.round(c)) for c in center_voxel_zyx])
-        
-        # Calculate bounding box in original space
-        z0 = max(0, center_voxel[0] - half_size_voxels_orig[0])
-        y0 = max(0, center_voxel[1] - half_size_voxels_orig[1])
-        x0 = max(0, center_voxel[2] - half_size_voxels_orig[2])
-        
-        z1 = min(vol.shape[0], center_voxel[0] + half_size_voxels_orig[0])
-        y1 = min(vol.shape[1], center_voxel[1] + half_size_voxels_orig[1])
-        x1 = min(vol.shape[2], center_voxel[2] + half_size_voxels_orig[2])
-        
-        # Crop the volume
-        crop = vol[z0:z1, y0:y1, x0:x1].astype(np.float32)
-        
-        # Resample to 64x64x64
-        from scipy.ndimage import zoom
-        zoom_factors = np.array([CROP_VOXELS, CROP_VOXELS, CROP_VOXELS]) / np.array(crop.shape)
-        resampled = zoom(crop, zoom_factors, order=1)  # Linear interpolation
-        
-        # Ensure exact size (sometimes zoom can be off by 1 voxel)
-        if resampled.shape != (CROP_VOXELS, CROP_VOXELS, CROP_VOXELS):
-            # Pad or crop to exact size
-            final = np.zeros((CROP_VOXELS, CROP_VOXELS, CROP_VOXELS), dtype=np.float32)
-            min_z = min(resampled.shape[0], CROP_VOXELS)
-            min_y = min(resampled.shape[1], CROP_VOXELS)
-            min_x = min(resampled.shape[2], CROP_VOXELS)
-            final[:min_z, :min_y, :min_x] = resampled[:min_z, :min_y, :min_x]
-            resampled = final
-        
-        # Create metadata
-        meta = {
-            "origin": np.array([0.0, 0.0, 0.0]),
-            "spacing": target_spacing,
-            "transform": np.identity(3),
-            "saved_path": "",  # Will be updated below
-            "patient_id": pid,
-            "nodule_id": nid,
-            "size_mm": size_mm,
-            "original_center_mm": center_mm_zyx,
-            "original_spacing": orig_spacing,
-            "malignancy_score": row["malignancy_score"],
-            "num_radiologists": row["num_radiologists"],
-        }
-        
-        # Save paths
-        filename = f"{pid}_nodule_{nid}"
-        img_path = os.path.join(output_dir, "images", f"{filename}.npy")
-        meta_path = os.path.join(output_dir, "metadata", f"{filename}.pkl")
-        
-        meta["saved_path"] = str(img_path)
-        
-        # Save image and metadata
-        np.save(img_path, resampled)
-        with open(meta_path, "wb") as f:
-            pickle.dump(meta, f)
 
-print("\n✅ Cropping complete!")
-for config in crop_configs:
-    img_dir = os.path.join(config["output_dir"], "images")
-    num_files = len([f for f in os.listdir(img_dir) if f.endswith('.npy')])
-    print(f"  - {config['size_mm']}mm crops: {num_files} nodules saved to {config['output_dir']}")
+    # Get spacing safely
+    pix_spacing = scan.pixel_spacing
+    if isinstance(pix_spacing, (float, int)):
+        pix_spacing = (float(pix_spacing), float(pix_spacing))
+    elif isinstance(pix_spacing, (list, tuple)) and len(pix_spacing) == 1:
+        pix_spacing = (float(pix_spacing[0]), float(pix_spacing[0]))
+    elif not (isinstance(pix_spacing, (list, tuple)) and len(pix_spacing) == 2):
+        pix_spacing = (0.7, 0.7)
+    spacing = np.array((float(scan.slice_thickness), *pix_spacing))
+
+    # Cluster and process nodules
+    try:
+        nodules = scan.cluster_annotations()
+    except Exception as e:
+        print(f"Skipping {pid}: could not cluster annotations ({e})")
+        continue
+
+    if not nodules:
+        continue
+
+    for n_idx, anns in enumerate(nodules, start=1):
+        try:
+            mask, cbbox, _ = consensus(anns, clevel=0.5)
+        except Exception as e:
+            print(f"⚠️ Skipping {pid} nodule {n_idx}: consensus failed ({e})")
+            continue
+
+        # Handle cbbox format
+        if isinstance(cbbox[0], slice):
+            z0, y0, x0 = [s.start for s in cbbox]
+            z1, y1, x1 = [s.stop for s in cbbox]
+        elif len(cbbox) == 6:
+            z0, z1, y0, y1, x0, x1 = cbbox
+        elif len(cbbox) == 3:
+            z0, y0, x0 = cbbox
+            z1, y1, x1 = np.array(cbbox) + np.array(mask.shape)
+        else:
+            print(f"⚠️ {pid} nodule {n_idx}: unexpected cbbox format {cbbox}")
+            continue
+
+        # Compute centroid (global)
+        coords = np.argwhere(mask)
+        if len(coords) > 0:
+            centroid_local = np.mean(coords, axis=0)
+            centroid_global = np.array([z0, y0, x0]) + centroid_local
+        else:
+            centroid_global = np.array([z0, y0, x0])
+
+        # Convert centroid from voxel indices → mm coordinates
+        centroid_mm = np.array(centroid_global) * spacing
+
+        # Malignancy
+        malignancy_scores = [a.malignancy for a in anns]
+        malignancy = float(np.mean(malignancy_scores))
+
+        # Compute distances
+        radius_mm, max_dist_mm = compute_radius_metrics(mask, spacing)
+
+        records.append({
+            "patient_id": pid,
+            "nodule_id": n_idx,
+            "malignancy_score": malignancy,
+            "center_voxel_zyx": tuple(np.round(centroid_global, 2)),
+            "center_mm_zyx": tuple(np.round(centroid_mm, 2)),
+            "spacing_zyx_mm": tuple(np.round(spacing, 4)),
+            "radius_mm": np.round(radius_mm, 3),
+            "max_dist_mm": np.round(max_dist_mm, 3),
+        })
+
+# Save to csv
+df = pd.DataFrame(records)
+df.to_csv(output_csv, index=False)
+print(f"\n✅ Saved all {len(df)} nodules to: {output_csv}")
+print(df.head())

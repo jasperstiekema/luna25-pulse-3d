@@ -1,4 +1,4 @@
-#models/pulse_3d.py
+
 import torch
 import torch.nn as nn
 from torchvision.models.video import r3d_18, R3D_18_Weights

@@ -5,46 +5,46 @@ import pylidc as pl
 from pathlib import Path
 from tqdm import tqdm
 import pickle
-
-# --- Compatibility for newer NumPy versions ---
 if not hasattr(np, "int"):
     np.int = int
 if not hasattr(np, "bool"):
     np.bool = bool
 
-# --- CONFIG ---
 os.environ["PYLIDC_DATA_PATH"] = r"D:\DICOM\lidc dataset\manifest-1600709154662\LIDC-IDRI select"
-input_csv = r"D:\LIDC_prepared\lidc_all_nodules_radius.csv"
+input_csv = r"D:\DATA\lidc_all_nodules_radius.csv"
 
 # Output directories for each crop size
 crop_configs = [
-    {"size_mm": 50, "output_dir": r"D:\LIDC_prepared\lidc_crop_50"},
-    {"size_mm": 70, "output_dir": r"D:\LIDC_prepared\lidc_crop_70"},
-    {"size_mm": 100, "output_dir": r"D:\LIDC_prepared\lidc_crop_100"},
+    {"size_mm": 50, "output_dir": r"D:\DATA\lidc crop 50"},
+    {"size_mm": 70, "output_dir": r"D:\DATA\lidc crop 70"},
+    {"size_mm": 100, "output_dir": r"D:\DATA\lidc crop 100"},
 ]
 
 # Fixed voxel dimensions
 CROP_VOXELS = 64
 
-# --- Create output directories ---
+# Create output directories
 for config in crop_configs:
     os.makedirs(os.path.join(config["output_dir"], "images"), exist_ok=True)
     os.makedirs(os.path.join(config["output_dir"], "metadata"), exist_ok=True)
 
-# --- Load CSV ---
+# Load CSV
 df = pd.read_csv(input_csv)
 print(f"Loaded {len(df)} nodules from CSV")
 
-# --- Helper function to safely parse tuples from CSV ---
+# Filter for nodules with 3+ radiologists
+df = df[df["num_radiologists"] >= 3]
+print(f"Filtered to {len(df)} nodules with 3+ radiologists")
+
+# Helper function to safely parse tuples from CSV
 def parse_tuple(s):
     """Parse string representation of tuple back to tuple of floats"""
     if isinstance(s, str):
-        # Remove parentheses and split by comma
         values = s.strip("()").split(",")
         return tuple(float(v.strip()) for v in values)
     return s
 
-# --- Process each nodule ---
+# Process each nodule
 for idx, row in tqdm(df.iterrows(), total=len(df), desc="Cropping nodules"):
     pid = row["patient_id"]
     nid = row["nodule_id"]
@@ -116,7 +116,6 @@ for idx, row in tqdm(df.iterrows(), total=len(df), desc="Cropping nodules"):
             "origin": np.array([0.0, 0.0, 0.0]),
             "spacing": target_spacing,
             "transform": np.identity(3),
-            "saved_path": "",  # Will be updated below
             "patient_id": pid,
             "nodule_id": nid,
             "size_mm": size_mm,
@@ -129,14 +128,11 @@ for idx, row in tqdm(df.iterrows(), total=len(df), desc="Cropping nodules"):
         # Save paths
         filename = f"{pid}_nodule_{nid}"
         img_path = os.path.join(output_dir, "images", f"{filename}.npy")
-        meta_path = os.path.join(output_dir, "metadata", f"{filename}.pkl")
-        
-        meta["saved_path"] = str(img_path)
+        meta_npy_path = os.path.join(output_dir, "metadata", f"{filename}.npy")
         
         # Save image and metadata
-        np.save(img_path, resampled)
-        with open(meta_path, "wb") as f:
-            pickle.dump(meta, f)
+        #np.save(img_path, resampled)
+        np.save(meta_npy_path, meta)
 
 print("\n✅ Cropping complete!")
 for config in crop_configs:
