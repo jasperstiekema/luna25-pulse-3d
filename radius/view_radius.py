@@ -7,16 +7,13 @@ data_dir = r"D:\PULSE\visualization\inputs_50mm"
 csv_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
 
 df = pd.read_csv(csv_path)
-if 'patient_id' not in df.columns or 'radius_mm' not in df.columns:
-    raise KeyError("CSV must contain 'patient_id' and 'radius_mm' columns.")
 
 npy_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".npy")])
 if not npy_files:
-    raise FileNotFoundError("No .npy files found in the specified directory.")
+    raise FileNotFoundError("No .npy files found")
 
-# Extract patient IDs from filenames (before first "_")
+# Extract patient IDs from filenames
 patient_ids = [f.split("_")[0] for f in npy_files]
-
 
 df = df[df['patient_id'].astype(str).isin(patient_ids)]
 radius_map = dict(zip(df['patient_id'].astype(str), df['radius_mm']))

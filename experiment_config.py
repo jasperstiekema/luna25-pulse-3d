@@ -47,7 +47,7 @@ class Configuration(object):
         self.TRANSLATION = True
         self.EPOCHS = 100
         self.PATIENCE = 20
-        self.PATCH_SIZE = [64, 128, 128]
+        self.PATCH_SIZE = [64, 64, 64]
         self.LEARNING_RATE = 1e-4
         # self.LEARNING_RATE = 1e-5
         # self.LEARNING_RATE = 1e-6

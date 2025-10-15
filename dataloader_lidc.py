@@ -246,11 +246,6 @@ class CTCaseDataset(data.Dataset):
         print(f"Total samples in CSV: {len(dataset)}")
         print(f"Valid samples found: {len(self.dataset)}")
         print(f"Missing samples: {len(missing_samples)}")
-        if missing_samples and len(missing_samples) <= 10:
-            print(f"Missing files: {', '.join(missing_samples)}")
-        elif missing_samples:
-            print(f"First 10 missing: {', '.join(missing_samples[:10])}")
-        print(f"{'='*60}\n")
 
 
     def __getitem__(self, idx):  # caseid, z, y, x, label, radius

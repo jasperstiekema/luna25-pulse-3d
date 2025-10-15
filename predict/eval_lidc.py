@@ -65,12 +65,14 @@ def main():
             patient_ids.extend(patient_id)
 
             
-            # --- Save each preprocessed input tensor ---
+            # Save each preprocessed input tensor
             for i in range(images.size(0)):
-                patient_id = str(patient_ids[i])
+                patient_id = str(patient_id[i])
                 img_np = images[i].squeeze().cpu().numpy()  # shape: (D, H, W)
                 npy_save_path = os.path.join(output_image_dir, f"{patient_id}_preprocessed.npy")
                 np.save(npy_save_path, img_np)
+                print(f"Saved preprocessed tensor -> {npy_save_path}")
+                print(f"{patient_id}: mean={img_np.mean():.3f}, std={img_np.std():.3f}, min={img_np.min():.3f}, max={img_np.max():.3f}")
 
             print(f"Processed batch with {images.size(0)} samples.")
 

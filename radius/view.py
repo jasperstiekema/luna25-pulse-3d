@@ -2,14 +2,11 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- Path to your saved preprocessed tensors ---
-data_dir = r"D:\LIDC_prepared\lidc_crop_50\images"
-
-# --- Gather all .npy files ---
+data_dir = r"D:\PULSE\visualization\luna_inputs_50mm"
 npy_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".npy")])
 
 if not npy_files:
-    raise FileNotFoundError("No .npy files found in the specified directory.")
+    raise FileNotFoundError("No .npy files found")
 
 print(f"Found {len(npy_files)} .npy files.")
 for i, f in enumerate(npy_files[:5]):

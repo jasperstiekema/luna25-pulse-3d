@@ -41,20 +41,33 @@ def plot_confusion_matrix(labels, preds, threshold):
 
 # Path to the CSV file
 csv_path = r"D:/PULSE/results classification/lidc_predictions_50mm.csv"
-
-# Load files
 df = pd.read_csv(csv_path)
 
-df_filtered = df
-print(f"length of df after filter: {len(df_filtered)}")
+low = 3
+high = 3
 
-probs = df_filtered["prob_cancer"].values
+# Keep only low and high malignancy examples
+df_filtered = df[(df["malignancy_score"] <= low) | (df["malignancy_score"] >= high)]
+
+# Create binary label: 0 = benign, 1 = malignant
+labels = (df_filtered["malignancy_score"] > high).astype(int)
+
+print(f"Length of df after filter: {len(df_filtered)}")
+print(f"Benign: {(labels==0).sum()}, Malignant: {(labels==1).sum()}")
+
+print(f"length of df after filter: {len(df_filtered)}")
+malignancy_score = df_filtered["malignancy_score"].values
+
+labels = (malignancy_score > high).astype(int)
 labels = df_filtered["true_label"].values
+probs = df_filtered["prob_cancer"].values
+malignancy_score = df_filtered["malignancy_score"].values
+
 
 # Remove unknown labels (-1)
 mask = labels != -1
-probs = probs[mask]
 labels = labels[mask]
+probs = probs[mask]
 
 # --- 1. Print Threshold Table ---
 thresholds = np.arange(0.1, 1.0, 0.1)

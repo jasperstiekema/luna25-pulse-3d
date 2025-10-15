@@ -37,10 +37,10 @@ def plot_confusion_matrix(labels, preds, threshold):
     
     return tn, fp, fn, tp
 
-# --- Main Script ---
+# Main Script
 
 # Path to the CSV file
-csv_path = r"D:/PULSE/results classification/lidc_predictions_50mm.csv"
+csv_path = r"D:/PULSE/results classification/luna_predictions_70mm.csv"
 
 # Load files
 df = pd.read_csv(csv_path)
@@ -56,7 +56,7 @@ mask = labels != -1
 probs = probs[mask]
 labels = labels[mask]
 
-# --- 1. Print Threshold Table ---
+# 1. Print Threshold Table
 thresholds = np.arange(0.1, 1.0, 0.1)
 print(f"{'Threshold':<10} {'Sensitivity':<11} {'Specificity':<11} {'PPV':<10} {'NPV':<10}")
 print("-" * 52)
@@ -76,7 +76,7 @@ for t in thresholds:
     
     print(f"{t:<10.2f} {sensitivity:<11.4f} {specificity:<11.4f} {ppv:<10.4f} {npv:<10.4f}")
 
-# --- 2. Calculate and Plot ROC AUC ---
+# 2. Calculate and Plot ROC AUC
 roc_auc_sklearn = roc_auc_score(labels, probs)
 print(f"\nROC AUC (sklearn): {roc_auc_sklearn:.4f}")
 
@@ -87,7 +87,7 @@ print(f"ROC AUC (MONAI):   {roc_auc_monai:.4f}")
 
 plot_roc_curve(labels, probs, roc_auc_sklearn)
 
-# --- 3. Confusion Matrix ---
+# 3. Confusion Matrix
 fixed_threshold = 0.8
 final_preds = (probs >= fixed_threshold).astype(int)
 plot_confusion_matrix(labels, final_preds, fixed_threshold)
