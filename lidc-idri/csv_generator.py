@@ -53,6 +53,13 @@ for s_idx, scan in enumerate(tqdm(scans, desc="Processing scans")):
         continue
 
     # Get spacing safely
+    slice_thickness = float(scan.slice_thickness)
+    
+    # Filter: only keep scans with slice thickness <= 5 mm
+    if slice_thickness > 5.0:
+        print(f"Skipping {pid}: slice thickness {slice_thickness} > 5 mm")
+        continue
+    
     pix_spacing = scan.pixel_spacing
     if isinstance(pix_spacing, (float, int)):
         pix_spacing = (float(pix_spacing), float(pix_spacing))
@@ -60,7 +67,7 @@ for s_idx, scan in enumerate(tqdm(scans, desc="Processing scans")):
         pix_spacing = (float(pix_spacing[0]), float(pix_spacing[0]))
     elif not (isinstance(pix_spacing, (list, tuple)) and len(pix_spacing) == 2):
         pix_spacing = (0.7, 0.7)
-    spacing = np.array((float(scan.slice_thickness), *pix_spacing))
+    spacing = np.array((slice_thickness, *pix_spacing))
 
     # Cluster and process nodules
     try:
@@ -73,10 +80,15 @@ for s_idx, scan in enumerate(tqdm(scans, desc="Processing scans")):
         continue
 
     for n_idx, anns in enumerate(nodules, start=1):
+        # Filter: only keep nodules with >= 3 radiologists
+        num_radiologists = len(anns)
+        if num_radiologists < 3:
+            continue
+
         try:
             mask, cbbox, _ = consensus(anns, clevel=0.5)
         except Exception as e:
-            print(f"⚠️ Skipping {pid} nodule {n_idx}: consensus failed ({e})")
+            print(f"Skipping {pid} nodule {n_idx}: consensus failed ({e})")
             continue
 
         # Handle cbbox format
@@ -89,7 +101,7 @@ for s_idx, scan in enumerate(tqdm(scans, desc="Processing scans")):
             z0, y0, x0 = cbbox
             z1, y1, x1 = np.array(cbbox) + np.array(mask.shape)
         else:
-            print(f"⚠️ {pid} nodule {n_idx}: unexpected cbbox format {cbbox}")
+            print(f"{pid} nodule {n_idx}: unexpected cbbox format {cbbox}")
             continue
 
         # Compute centroid (global)
@@ -103,9 +115,9 @@ for s_idx, scan in enumerate(tqdm(scans, desc="Processing scans")):
         # Convert centroid from voxel indices → mm coordinates
         centroid_mm = np.array(centroid_global) * spacing
 
-        # Malignancy
-        malignancy_scores = [a.malignancy for a in anns]
-        malignancy = float(np.mean(malignancy_scores))
+        # Get all malignancy scores
+        malignancy_scores = [float(a.malignancy) for a in anns]
+        malignancy_mean = float(np.mean(malignancy_scores))
 
         # Compute distances
         radius_mm, max_dist_mm = compute_radius_metrics(mask, spacing)
@@ -113,7 +125,10 @@ for s_idx, scan in enumerate(tqdm(scans, desc="Processing scans")):
         records.append({
             "patient_id": pid,
             "nodule_id": n_idx,
-            "malignancy_score": malignancy,
+            "num_radiologists": num_radiologists,
+            "slice_thickness_mm": slice_thickness,
+            "malignancy_scores": malignancy_scores,
+            "malignancy_mean": malignancy_mean,
             "center_voxel_zyx": tuple(np.round(centroid_global, 2)),
             "center_mm_zyx": tuple(np.round(centroid_mm, 2)),
             "spacing_zyx_mm": tuple(np.round(spacing, 4)),

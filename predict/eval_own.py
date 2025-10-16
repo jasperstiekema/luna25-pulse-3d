@@ -7,8 +7,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.Pulse3D import Pulse3D
 from dataloader_own import get_data_loader
 
-FOV = 100
-model_path = r"D:\PULSE\results\fov check\lr_1e-5_100mm_64px-3D-20251010\0.7909_model.pth"
+FOV = 50
+model_path = r"D:\PULSE\results\auc check\lr_1e-4_auc_check-3D-20251009\0.8788_model.pth"
 csv_dir = r"D:/DATA/LBxSF_labeled_segmented_radius.csv"
 data_dir = rf"D:/DATA/own dataset crops fov {FOV}"
 output_dir = rf"D:/PULSE/inputs_{FOV}mm"
