@@ -5,10 +5,11 @@ import torch.utils.data as data
 from torch.utils.data import DataLoader
 import numpy.linalg as npl
 import scipy.ndimage as ndi
-from experiment_config import config
+from experiment_config_lidc import config
 from torch.utils.data import BatchSampler, RandomSampler
 from torchsampler import ImbalancedDatasetSampler
 import pandas as pd
+import ast
 from monai.transforms import (
     Compose,
     RandRotate90,
@@ -238,7 +239,7 @@ def rotateMatrixZ(cosAngle, sinAngle):
 
 
 class CTCaseDataset(data.Dataset):
-    """LUNA25 baseline dataset
+    """CT dataset for LUNA25 and LIDC
             Args:
             data_dir (str): path to the nodule_blocks data directory
             dataset (pd.DataFrame): dataframe with the dataset information
@@ -302,30 +303,45 @@ class CTCaseDataset(data.Dataset):
     def __getitem__(self, idx):
         pd = self.dataset.iloc[idx]
         label = pd.malignancy_score
-        if config.lidc_label == "mean":
-            malignancy = pd.malignancy_mean
-            if malignancy <= 2:
-                label = 0
-            elif malignancy >= 4:
-                label = 1
-        if config.lidc_label == "consensus":
-            malignancy = pd.malignancy_scores
-            # at least 3 radiologists agree on malignancy >=4
-            if sum(m >= 3 for m in malignancy) >= 3:
-                label = 1
-            elif sum(m <= 3 for m in malignancy) >= 3:
-                label = 0
+        
+        # LIDC labeling methods
+        if hasattr(pd, 'malignancy_mean') and pd.dataset == 'lidc':
+            if config.lidc_label == "mean":
+                malignancy = pd.malignancy_mean
+                if malignancy <= 2:
+                    label = 0
+                elif malignancy >= 4:
+                    label = 1
+            
+            elif config.lidc_label == "majority_vote":
+                malignancy_scores = pd.malignancy_scores
+                if isinstance(malignancy_scores, str):
+                    malignancy_scores = ast.literal_eval(malignancy_scores)
+                
+                agree_malignant = sum(score >= 3 for score in malignancy_scores)
+                agree_benign = sum(score <= 2 for score in malignancy_scores)
+                
+                if agree_malignant >= 3 and malignancy_scores.mean() >= 3:
+                    label = 1
+                elif agree_benign >= 3 and malignancy_scores.mean() <= 3:
+                    label = 0
+            
+            elif config.lidc_label == "median":
+                malignancy_scores = pd.malignancy_scores
+                if isinstance(malignancy_scores, str):
+                    malignancy_scores = ast.literal_eval(malignancy_scores)
+                
+                median = np.median(malignancy_scores)
+                if median <= 2.5:
+                    label = 0
+                elif median >= 3.5:
+                    label = 1
 
         patient_id = pd.patient_id
         nodule_id = pd.nodule_id
 
         image_path = self.data_dir / "image" / f"{patient_id}_nodule_{nodule_id}.npy"
         metadata_path = self.data_dir / "metadata" / f"{patient_id}_nodule_{nodule_id}.npy"
-
-        age = int(pd.Age_at_StudyDate) / 100
-        gender = 1 if pd.Gender == 'Female' else 0
-
-
 
         # numpy memory map data/image case file
         img = np.load(image_path, mmap_mode="r")
@@ -390,19 +406,14 @@ class CTCaseDataset(data.Dataset):
         fmt_str = "Dataset " + self.__class__.__name__ + "\n"
         fmt_str += "    Number of datapoints: {}\n".format(self.__len__())
         return fmt_str
-    
 
 
 def sample_random_coordinate_on_sphere(radius):
-    # Generate three random numbers x,y,z using Gaussian distribution
     random_nums = np.random.normal(size=(3,))
-
-    # You should handle what happens if x=y=z=0.
     if np.all(random_nums == 0):
         return np.zeros((3,))
-
-    # Normalise numbers and multiply number by radius of sphere
     return random_nums / np.sqrt(np.sum(random_nums * random_nums)) * radius
+
 
 def extract_patch(
     CTData,
@@ -423,7 +434,6 @@ def extract_patch(
     if rotations is not None:
         (zmin, zmax), (ymin, ymax), (xmin, xmax) = rotations
 
-        # add random rotation
         angleX = np.multiply(np.pi / 180.0, np.random.randint(xmin, xmax, 1))[0]
         angleY = np.multiply(np.pi / 180.0, np.random.randint(ymin, ymax, 1))[0]
         angleZ = np.multiply(np.pi / 180.0, np.random.randint(zmin, zmax, 1))[0]
@@ -442,16 +452,12 @@ def extract_patch(
         transform_matrix = np.dot(transform_matrix, transformMatrixAug)
 
     if translations is not None:
-        # add random translation
         radius = np.random.random_sample() * translations
         offset = sample_random_coordinate_on_sphere(radius=radius)
         offset = offset * (1.0 / srcVoxelSpacing)
-
         coord = np.array(coord) + offset
 
-    # Normalize transform matrix
     thisTransformMatrix = transform_matrix
-
     thisTransformMatrix = (
         thisTransformMatrix.T
         / np.sqrt(np.sum(thisTransformMatrix * thisTransformMatrix, axis=1))
@@ -459,11 +465,9 @@ def extract_patch(
 
     invSrcMatrix = np.linalg.inv(srcWorldMatrix)
 
-    # world coord sampling
     if coord_space_world:
         overrideCoord = invSrcMatrix.dot(coord - srcVoxelOrigin)
     else:
-        # image coord sampling
         overrideCoord = coord * srcVoxelSpacing
     overrideMatrix = (invSrcMatrix.dot(thisTransformMatrix.T) * srcVoxelSpacing).T
 
@@ -479,9 +483,7 @@ def extract_patch(
     ) 
 
     if mode == "2D":
-        # replicate the channel dimension
         patch = np.repeat(patch, 3, axis=0)
-
     else:
         patch = np.expand_dims(patch, axis=0)
 
@@ -533,15 +535,15 @@ def get_data_loader_lidc(
     )
     return data_loader
 
+
 def test():
-    # Test the dataloader
     import pandas as pd
     from experiment_config import config
     import matplotlib.pyplot as plt
 
     dataset = pd.read_csv(config.CSV_DIR_VALID)
 
-    train_loader = get_data_loader_lidc(
+    train_loader = get_data_loader(
         data_dir=config.DATADIR,
         dataset=dataset,
         mode=config.MODE,
@@ -556,6 +558,7 @@ def test():
 
     for i, data in enumerate(train_loader):
         print(i, data["image"].shape, data["label"].shape)
+
 
 if __name__ == "__main__":
     test()

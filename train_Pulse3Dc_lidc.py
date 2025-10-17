@@ -21,8 +21,8 @@ from tqdm import tqdm
 from sklearn.model_selection import GroupKFold
 import matplotlib.pyplot as plt
 
-from dataloader_cls import get_data_loader
-from experiment_config import config
+from dataloader_cls import get_data_loader, get_data_loader_lidc
+from experiment_config_lidc import config
 from models.Pulse3D import Pulse3D
 from tensorboard_visuals import (
     log_prediction_samples,
@@ -30,9 +30,9 @@ from tensorboard_visuals import (
 )
 
 
-
+# -------------------------------------------------------------------------
 # Utility logging setup
-
+# -------------------------------------------------------------------------
 def setup_logger(log_dir: Path, name="train"):
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"{name}.log"
@@ -49,8 +49,9 @@ def setup_logger(log_dir: Path, name="train"):
     return logging.getLogger(name)
 
 
+# -------------------------------------------------------------------------
 # Loss functions
-
+# -------------------------------------------------------------------------
 def focal_loss(inputs, targets, alpha=0.25, gamma=2.0):
     if inputs.dim() == 1 and targets.dim() == 2:
         inputs = inputs.view(-1, 1)
@@ -72,8 +73,9 @@ def focal_loss_with_smoothing(inputs, targets, alpha=0.25, gamma=2.0, smoothing=
     return (alpha * (1 - pt) ** gamma * bce).mean()
 
 
+# -------------------------------------------------------------------------
 # Helpers
-
+# -------------------------------------------------------------------------
 def make_weights_for_balanced_classes(labels: np.ndarray) -> torch.DoubleTensor:
     n = len(labels)
     _, counts = np.unique(labels, return_counts=True)
@@ -81,14 +83,59 @@ def make_weights_for_balanced_classes(labels: np.ndarray) -> torch.DoubleTensor:
     return torch.DoubleTensor([frac[l] for l in labels])
 
 
-def create_kfold_splits(csv_path, n_splits=5, shuffle=True, random_state=None):
-    df = pd.read_csv(csv_path)
+def create_kfold_splits_dual_dataset(luna_csv, lidc_csv, n_splits=5, random_state=None):
+    """
+    Create k-fold splits with both LUNA25 and LIDC data.
+    LIDC data is split proportionally to match LUNA25 distribution across folds.
+    """
+    luna_df = pd.read_csv(luna_csv)
+    lidc_df = pd.read_csv(lidc_csv)
+    
+    # Mark datasets
+    luna_df['dataset'] = 'luna'
+    lidc_df['dataset'] = 'lidc'
+    
+    # Get LUNA25 folds using GroupKFold
     gkf = GroupKFold(n_splits=n_splits)
+    luna_folds = []
+    for train_idx, val_idx in gkf.split(luna_df, groups=luna_df.PatientID):
+        luna_folds.append((train_idx, val_idx))
+    
+    # Get LIDC label distribution
+    lidc_label_dist = lidc_df['label'].value_counts(normalize=True).sort_index()
+    
+    # Split LIDC by patient to maintain independence
+    lidc_patients = lidc_df['patient_id'].unique()
+    if random_state is not None:
+        np.random.seed(random_state)
+    
+    # Stratify LIDC patients by label distribution
+    lidc_train_patients = []
+    lidc_val_patients = []
+    
+    for label in sorted(lidc_df['label'].unique()):
+        label_patients = lidc_df[lidc_df['label'] == label]['patient_id'].unique()
+        n_train = int(len(label_patients) * 0.5)  # 50-50 for each label
+        train_patients = np.random.choice(label_patients, n_train, replace=False)
+        val_patients = [p for p in label_patients if p not in train_patients]
+        lidc_train_patients.extend(train_patients)
+        lidc_val_patients.extend(val_patients)
+    
+    lidc_train = lidc_df[lidc_df['patient_id'].isin(lidc_train_patients)].reset_index(drop=True)
+    lidc_val = lidc_df[lidc_df['patient_id'].isin(lidc_val_patients)].reset_index(drop=True)
+    
+    # Combine folds
     fold_dfs = []
-    for train_idx, val_idx in gkf.split(df, groups=df.PatientID):
-        train_fold = df.iloc[train_idx].reset_index(drop=True)
-        val_fold = df.iloc[val_idx].reset_index(drop=True)
+    for train_idx, val_idx in luna_folds:
+        luna_train = luna_df.iloc[train_idx].reset_index(drop=True)
+        luna_val = luna_df.iloc[val_idx].reset_index(drop=True)
+        
+        # Combine with LIDC data
+        train_fold = pd.concat([luna_train, lidc_train], ignore_index=True)
+        val_fold = pd.concat([luna_val, lidc_val], ignore_index=True)
+        
         fold_dfs.append((train_fold, val_fold))
+    
     return fold_dfs
 
 
@@ -180,26 +227,36 @@ def save_fold_metrics_plot(fold_dir, history):
     plt.close()
 
 
+# -------------------------------------------------------------------------
 # Core training
-
+# -------------------------------------------------------------------------
 def train_fold(train_df, valid_df, exp_root, fold_idx, args, logger):
+    fold_dir = exp_root / f"fold_{fold_idx}"
+    fold_dir.mkdir(parents=True, exist_ok=True)
+
     logger.info(f"========== Training Fold {fold_idx} ==========")
-    tensorboard_dir = exp_root / f"tensorboard_fold_{fold_idx}"
+    tensorboard_dir = fold_dir / "tensorboard"
 
     if tensorboard_dir.exists():
         shutil.rmtree(tensorboard_dir)
-        logger.info(f"Removed previous TensorBoard directory for fold {fold_idx}.")
+        logger.info("Removed previous TensorBoard directory.")
 
     writer = None if args.no_tensorboard else SummaryWriter(log_dir=tensorboard_dir)
 
-    logger.info(
-        f"Training set: {len(train_df)} (malignant={train_df.label.sum()}, benign={len(train_df) - train_df.label.sum()})"
-    )
-    logger.info(
-        f"Validation set: {len(valid_df)} (malignant={valid_df.label.sum()}, benign={len(valid_df) - valid_df.label.sum()})"
-    )
+    # Separate by dataset for logging
+    train_luna = train_df[train_df['dataset'] == 'luna']
+    train_lidc = train_df[train_df['dataset'] == 'lidc']
+    val_luna = valid_df[valid_df['dataset'] == 'luna']
+    val_lidc = valid_df[valid_df['dataset'] == 'lidc']
 
-    # Weighted sampler for class balance
+    logger.info(f"Training set: {len(train_df)} total")
+    logger.info(f"  LUNA25: {len(train_luna)} (malignant={train_luna.label.sum()}, benign={len(train_luna) - train_luna.label.sum()})")
+    logger.info(f"  LIDC: {len(train_lidc)} (malignant={train_lidc.label.sum()}, benign={len(train_lidc) - train_lidc.label.sum()})")
+    
+    logger.info(f"Validation set: {len(valid_df)} total")
+    logger.info(f"  LUNA25: {len(val_luna)} (malignant={val_luna.label.sum()}, benign={len(val_luna) - val_luna.label.sum()})")
+    logger.info(f"  LIDC: {len(val_lidc)} (malignant={val_lidc.label.sum()}, benign={len(val_lidc) - val_lidc.label.sum()})")
+
     sampler = torch.utils.data.WeightedRandomSampler(
         weights=make_weights_for_balanced_classes(train_df.label.values),
         num_samples=len(train_df),
@@ -213,191 +270,199 @@ def train_fold(train_df, valid_df, exp_root, fold_idx, args, logger):
         size_px=config.SIZE_PX,
     )
 
-    train_loader = get_data_loader(
+    # Create dual-dataset loaders
+    train_luna_loader = get_data_loader(
         config.DATADIR,
-        train_df,
+        train_luna,
         mode="3D",
-        sampler=sampler,
+        sampler=None,
         rotations=config.ROTATION,
         translations=config.TRANSLATION,
         use_monai_transforms=True,
         **common_loader_args,
-    )
+    ) if len(train_luna) > 0 else None
 
-    valid_loader = get_data_loader(
+    train_lidc_loader = get_data_loader_lidc(
+        config.LIDC_DATADIR,
+        train_lidc,
+        mode="3D",
+        sampler=None,
+        rotations=config.ROTATION,
+        translations=config.TRANSLATION,
+        use_monai_transforms=True,
+        **common_loader_args,
+    ) if len(train_lidc) > 0 else None
+
+    valid_luna_loader = get_data_loader(
         config.DATADIR,
-        valid_df,
+        val_luna,
         mode="3D",
         rotations=None,
         translations=None,
         use_monai_transforms=False,
         **common_loader_args,
-    )
+    ) if len(val_luna) > 0 else None
+
+    valid_lidc_loader = get_data_loader_lidc(
+        config.LIDC_DATADIR,
+        val_lidc,
+        mode="3D",
+        rotations=None,
+        translations=None,
+        use_monai_transforms=False,
+        **common_loader_args,
+    ) if len(val_lidc) > 0 else None
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = Pulse3D().to(device)
 
-    # Resume if specified
     if args.resume and os.path.exists(args.resume):
         model.load_state_dict(torch.load(args.resume, map_location=device))
         logger.info(f"Resumed from checkpoint: {args.resume}")
 
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY)
     criterion = torch.nn.BCEWithLogitsLoss()
 
-    # Phase 1: Feature learning (LR = 1e-4)
-
-    phase1_lr = 1e-4
-    optimizer = torch.optim.AdamW(model.parameters(), lr=phase1_lr, weight_decay=config.WEIGHT_DECAY)
-    phase1_epochs = 8
+    phase1_epochs = 20
     best_auc, best_epoch = -1.0, -1
+    
+    # History for plotting
+    history = {
+        'train_loss': [], 'val_loss': [],
+        'train_auc': [], 'val_auc': [],
+        'train_sens': [], 'val_sens': [],
+        'train_spec': [], 'val_spec': [],
+        'train_ppv': [], 'val_ppv': [],
+        'train_npv': [], 'val_npv': [],
+        'best_epoch': -1
+    }
 
     disable_tqdm = not sys.stdout.isatty()
-    logger.info(f"--- Phase 1: Feature Learning (lr={phase1_lr}, {phase1_epochs} epochs) ---")
 
     for epoch in range(phase1_epochs):
-        logger.info(f"[Phase 1][Fold {fold_idx}] Epoch {epoch+1}/{phase1_epochs}")
+        logger.info(f"\n[Phase 1][Fold {fold_idx}] Epoch {epoch+1}/{phase1_epochs}")
+
+        # ---- Train ----
         model.train()
         train_loss = 0.0
         y_train_true, y_train_raw = [], []
+        step = 0
 
-        for step, batch in enumerate(tqdm(train_loader, desc="Train", disable=disable_tqdm), 1):
-            optimizer.zero_grad(set_to_none=True)
-            ct = batch["image"].to(device)
-            lbl = batch["label"].float().to(device)
+        # Iterate through both datasets
+        train_loaders = []
+        if train_luna_loader:
+            train_loaders.append(train_luna_loader)
+        if train_lidc_loader:
+            train_loaders.append(train_lidc_loader)
 
-            logits = model(ct).squeeze(1)
-            loss = criterion(logits.view(-1), lbl.view(-1))
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
-            y_train_true.append(lbl.cpu())
-            y_train_raw.append(logits.cpu())
+        for loader in train_loaders:
+            for step, batch in enumerate(tqdm(loader, desc="Train", disable=disable_tqdm), 1):
+                optimizer.zero_grad(set_to_none=True)
+                ct = batch["image"].to(device)
+                lbl = batch["label"].float().to(device)
 
-        avg_train_loss = train_loss / step
+                logits = model(ct).squeeze(1)
+                loss = criterion(logits.view(-1), lbl.view(-1))
+
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+                
+                y_train_true.append(lbl.cpu())
+                y_train_raw.append(logits.cpu())
+
+                if step % 100 == 0:
+                    logger.info(f"Step {step}: loss={loss.item():.4f}")
+                    if writer:
+                        writer.add_scalar("Loss/train_step", loss.item(), epoch * 100 + step)
+
+        avg_train_loss = train_loss / max(step, 1)
         y_train_true = torch.cat(y_train_true).numpy()
         y_train_pred = torch.sigmoid(torch.cat(y_train_raw)).detach().numpy()
         train_auc, train_sens, train_spec, train_ppv, train_npv = calculate_metrics(y_train_true, y_train_pred)
+        
+        history['train_loss'].append(avg_train_loss)
+        history['train_auc'].append(train_auc)
+        history['train_sens'].append(train_sens)
+        history['train_spec'].append(train_spec)
+        history['train_ppv'].append(train_ppv)
+        history['train_npv'].append(train_npv)
+        
+        if writer:
+            writer.add_scalar("Loss/train_epoch", avg_train_loss, epoch)
+        logger.info(f"Train loss: {avg_train_loss:.6f} | AUC={train_auc:.4f}")
 
-        # Validation
+        # ---- Validate ----
         model.eval()
         val_loss = 0.0
         y_true, y_raw = [], []
-        with torch.no_grad():
-            for step, batch in enumerate(tqdm(valid_loader, desc="Val", disable=disable_tqdm), 1):
-                ct = batch["image"].to(device)
-                lbl = batch["label"].float().to(device)
-                logits = model(ct).squeeze(1)
-                loss = criterion(logits.view(-1), lbl.view(-1))
-                val_loss += loss.item()
-                y_true.append(lbl.cpu())
-                y_raw.append(logits.cpu())
+        step = 0
 
-        avg_val_loss = val_loss / step
+        val_loaders = []
+        if valid_luna_loader:
+            val_loaders.append(valid_luna_loader)
+        if valid_lidc_loader:
+            val_loaders.append(valid_lidc_loader)
+
+        with torch.no_grad():
+            for loader in val_loaders:
+                for step, batch in enumerate(tqdm(loader, desc="Val", disable=disable_tqdm), 1):
+                    ct = batch["image"].to(device)
+                    lbl = batch["label"].float().to(device)
+                    logits = model(ct).squeeze(1)
+                    loss = criterion(logits.view(-1), lbl.view(-1))
+                    val_loss += loss.item()
+                    y_true.append(lbl.cpu())
+                    y_raw.append(logits.cpu())
+
+        avg_val_loss = val_loss / max(step, 1)
         y_true = torch.cat(y_true).numpy()
         y_pred = torch.sigmoid(torch.cat(y_raw)).detach().numpy()
         auc, sens, spec, ppv, npv = calculate_metrics(y_true, y_pred)
+        
+        history['val_loss'].append(avg_val_loss)
+        history['val_auc'].append(auc)
+        history['val_sens'].append(sens)
+        history['val_spec'].append(spec)
+        history['val_ppv'].append(ppv)
+        history['val_npv'].append(npv)
 
-        logger.info(f"Val loss: {avg_val_loss:.6f} | AUC={auc:.4f}")
+        logger.info(f"Val loss: {avg_val_loss:.6f} | AUC={auc:.4f} | Sens={sens:.4f} | Spec={spec:.4f}")
+        if writer:
+            writer.add_scalar("Loss/val_epoch", avg_val_loss, epoch)
+            writer.add_scalar("Metrics/AUC", auc, epoch)
 
         if auc > best_auc:
             best_auc, best_epoch = auc, epoch + 1
-            torch.save(model.state_dict(), exp_root / f"fold_{fold_idx}_phase1_best.pth")
-            logger.info(f"Saved Phase 1 best model: fold_{fold_idx}_phase1_best.pth (AUC={best_auc:.4f})")
+            torch.save(model.state_dict(), fold_dir / "fold_best.pth")
+            logger.info(f"Saved new best model at epoch {best_epoch} (AUC={best_auc:.4f})")
+            history['best_epoch'] = best_epoch
 
-    # Phase 2: Fine-tuning (LR = 1e-6) with early stopping
-    logger.info(f"\n--- Phase 2: Fine-tuning (lr=1e-6, patience={config.PATIENCE}) ---")
-
-    model.load_state_dict(torch.load(exp_root / f"fold_{fold_idx}_phase1_best.pth"))
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-6, weight_decay=config.WEIGHT_DECAY)
-
-    best_auc_phase2 = best_auc
-    patience_counter = 0
-
-    for epoch in range(config.EPOCHS):
-        logger.info(f"[Phase 2][Fold {fold_idx}] Epoch {epoch+1}/{config.EPOCHS}")
-        model.train()
-        train_loss = 0.0
-        y_train_true, y_train_raw = [], []
-
-        for step, batch in enumerate(tqdm(train_loader, desc="Train", disable=disable_tqdm), 1):
-            optimizer.zero_grad(set_to_none=True)
-            ct = batch["image"].to(device)
-            lbl = batch["label"].float().to(device)
-            logits = model(ct).squeeze(1)
-            loss = criterion(logits.view(-1), lbl.view(-1))
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
-            y_train_true.append(lbl.cpu())
-            y_train_raw.append(logits.cpu())
-
-        # Validation
-        model.eval()
-        val_loss = 0.0
-        y_true, y_raw = [], []
-        with torch.no_grad():
-            for step, batch in enumerate(tqdm(valid_loader, desc="Val", disable=disable_tqdm), 1):
-                ct = batch["image"].to(device)
-                lbl = batch["label"].float().to(device)
-                logits = model(ct).squeeze(1)
-                loss = criterion(logits.view(-1), lbl.view(-1))
-                val_loss += loss.item()
-                y_true.append(lbl.cpu())
-                y_raw.append(logits.cpu())
-
-        y_true = torch.cat(y_true).numpy()
-        y_pred = torch.sigmoid(torch.cat(y_raw)).detach().numpy()
-        auc, sens, spec, ppv, npv = calculate_metrics(y_true, y_pred)
-
-        logger.info(f"Val AUC={auc:.4f}")
-
-        if auc > best_auc_phase2:
-            best_auc_phase2 = auc
-            patience_counter = 0
-            torch.save(model.state_dict(), exp_root / f"fold_{fold_idx}_best.pth")
-            logger.info(f"New best model saved: fold_{fold_idx}_best.pth (AUC={best_auc_phase2:.4f})")
-        else:
-            patience_counter += 1
-            logger.info(f"No improvement for {patience_counter}/{config.PATIENCE} epochs.")
-            if patience_counter >= config.PATIENCE:
-                logger.info(f"Early stopping after {epoch+1} epochs (no improvement for {config.PATIENCE}).")
-                break
-
-    # Save results and plot
-    results = {"best_auc": best_auc_phase2, "best_epoch": best_epoch}
-    with open(exp_root / f"fold_{fold_idx}_results.json", "w") as f:
+    # ---- Save final metrics ----
+    results = {"best_auc": best_auc, "best_epoch": best_epoch}
+    with open(fold_dir / "results.json", "w") as f:
         json.dump(results, f, indent=2)
-
-    save_fold_metrics_plot(exp_root, {
-        **{
-            'train_loss': [], 'val_loss': [],
-            'train_auc': [], 'val_auc': [],
-            'train_sens': [], 'val_sens': [],
-            'train_spec': [], 'val_spec': [],
-            'train_ppv': [], 'val_ppv': [],
-            'train_npv': [], 'val_npv': [],
-            'best_epoch': best_epoch
-        }
-    })
-    # Rename plot to match fold
-    (exp_root / "fold_graph.png").rename(exp_root / f"fold_{fold_idx}_metrics.png")
-    logger.info(f"Saved fold_{fold_idx}_metrics.png")
+    
+    # Save plot
+    save_fold_metrics_plot(fold_dir, history)
+    logger.info(f"Saved metrics plot to {fold_dir / 'fold_graph.png'}")
 
     if writer:
         writer.close()
-
     return results
 
 
+# -------------------------------------------------------------------------
 # Cross-validation routine
-
-def train_cross_validation(csv_path, exp_root, n_folds=5, only_fold=-1, args=None, logger=None):
+# -------------------------------------------------------------------------
+def train_cross_validation(luna_csv, lidc_csv, exp_root, n_folds=5, only_fold=-1, args=None, logger=None):
     torch.manual_seed(config.SEED)
     np.random.seed(config.SEED)
     random.seed(config.SEED)
 
     exp_root.mkdir(parents=True, exist_ok=True)
-    fold_data = create_kfold_splits(csv_path, n_splits=n_folds, random_state=config.SEED)
+    
+    fold_data = create_kfold_splits_dual_dataset(luna_csv, lidc_csv, n_splits=n_folds, random_state=config.SEED)
 
     all_results = []
 
@@ -417,8 +482,10 @@ def train_cross_validation(csv_path, exp_root, n_folds=5, only_fold=-1, args=Non
 
     return all_results
 
-# Entry point
 
+# -------------------------------------------------------------------------
+# Entry point
+# -------------------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--fold", type=int, default=-1, help="Run only this fold")
@@ -429,19 +496,22 @@ if __name__ == "__main__":
     exp_name = f"{config.EXPERIMENT_NAME}-Pulse3D-{datetime.today().strftime('%Y%m%d')}"
     exp_root = config.EXPERIMENT_DIR / exp_name
 
-    csv_path = config.CSV_DIR / "all_data_.csv"
-    if not csv_path.exists():
+    luna_csv = config.CSV_DIR / "all_data_.csv"
+    if not luna_csv.exists():
         train_df = pd.read_csv(config.CSV_DIR_TRAIN)
         valid_df = pd.read_csv(config.CSV_DIR_VALID)
         test_df = pd.read_csv(config.CSV_DIR_TEST)
         all_df = pd.concat([train_df, valid_df], ignore_index=True)
         all_df_ = pd.concat([all_df, test_df], ignore_index=True)
-        all_df_.to_csv(csv_path, index=False)
+        all_df_.to_csv(luna_csv, index=False)
+
+    lidc_csv = config.LIDC_CSV
 
     logger = setup_logger(exp_root)
     logger.info(f"Experiment: {exp_name}")
-    logger.info(f"Data CSV: {csv_path}")
+    logger.info(f"LUNA25 CSV: {luna_csv}")
+    logger.info(f"LIDC CSV: {lidc_csv}")
     logger.info(f"TensorBoard: {'Disabled' if args.no_tensorboard else 'Enabled'}")
 
-    results = train_cross_validation(csv_path, exp_root, n_folds=5, only_fold=args.fold, args=args, logger=logger)
+    results = train_cross_validation(luna_csv, lidc_csv, exp_root, n_folds=5, only_fold=args.fold, args=args, logger=logger)
     logger.info(f"Finished all folds. Results: {results}")
