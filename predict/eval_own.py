@@ -10,9 +10,9 @@ from dataloader_own import get_data_loader
 FOV = 50
 model_path = r"D:\PULSE\results\auc check\lr_1e-4_auc_check-3D-20251009\0.8788_model.pth"
 csv_dir = r"D:/DATA/LBxSF_labeled_segmented_radius.csv"
-data_dir = rf"D:/DATA/own dataset crops fov {FOV}"
-output_dir = rf"D:/PULSE/inputs_{FOV}mm"
-csv_output_dir = rf"D:/PULSE/results classification/own_predictions_{FOV}mm.csv"
+data_dir = rf"D:/DATA/own dataset pulse crops"
+output_dir = rf"D:/PULSE/own crops {FOV} vis"
+csv_output_dir = rf"D:/PULSE/results classification/cv check/golden_standard.csv"
 
 def main():
     df = read_csv(csv_dir)
@@ -29,7 +29,7 @@ def main():
         size_px=64,
     )
 
-    model = Pulse3D(num_classes=1, input_channels=1, freeze_bn=True)
+    model = Pulse3D(num_classes=1, input_channels=1, freeze_bn=False)
 
     model.load_state_dict(
         torch.load(
@@ -51,8 +51,9 @@ def main():
             images = batch["image"].to(device)
             labels = batch["label"].to(device).float().unsqueeze(1)
             outputs = model(images)
-            probs = torch.sigmoid(outputs).squeeze(1)
-
+            probs = torch.sigmoid(outputs)
+            if probs.dim() > 1:
+                probs = probs.squeeze()
             y_pred.extend(probs.cpu().numpy().flatten().tolist())
             y_true.extend(labels.cpu().numpy().flatten().tolist())
             batch_filenames = batch["path"]
@@ -62,13 +63,13 @@ def main():
                 patient_id = basename.split("_")[0]
                 patient_ids.append(patient_id)
 
-                img_np = images[i].squeeze().cpu().numpy()  # shape: (D, H, W)
-                npy_save_path = os.path.join(output_image_dir, f"{patient_id}_preprocessed.npy")
-                np.save(npy_save_path, img_np)
-                print(f"Saved preprocessed tensor -> {npy_save_path}")
+                # img_np = images[i].squeeze().cpu().numpy()  # shape: (D, H, W)
+                # npy_save_path = os.path.join(output_image_dir, f"{patient_id}_preprocessed.npy")
+                # np.save(npy_save_path, img_np)
+                # print(f"Saved preprocessed tensor -> {npy_save_path}")
                 # -----------------------------------------------------
 
-            print(f"Processed batch with {images.size(0)} samples.")
+        print(f"Processed batch with {images.size(0)} samples.")
 
     results_df = DataFrame({
         "patient_id": patient_ids,

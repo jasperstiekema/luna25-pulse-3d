@@ -40,8 +40,8 @@ def plot_confusion_matrix(labels, preds, threshold):
 # --- Main Script ---
 
 # Path to the CSV file
-FOV = 100
-csv_path = rf"D:/PULSE/results classification/own_predictions_{FOV}mm.csv"
+FOV = 50
+csv_path = r"D:/PULSE/results classification/cv check/golden_standard.csv"
 dist_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
 
 # Load files
@@ -67,9 +67,9 @@ df = df.drop(columns=['Studienummer_Algemeen'])
 print(df[['patient_id', 'max_dist_mm']].head(10))
 
 # Optional filtering by max distance
-max_dist_threshold = 50.0  # mm
-#df_filtered = df
-df_filtered = df[df['max_dist_mm'] <= max_dist_threshold]
+# max_dist_threshold = 50.0  # mm
+df_filtered = df
+# df_filtered = df[df['max_dist_mm'] <= max_dist_threshold]
 print(f"Length after filtering: {len(df_filtered)}")
 
 # Extract prediction and label arrays
@@ -80,6 +80,14 @@ labels = df_filtered["true_label"].values
 mask = labels != -1
 probs = probs[mask]
 labels = labels[mask]
+
+# --- Prediction Statistics ---
+print(f"\nPrediction Statistics:")
+print(f"Min probability: {probs.min():.4f}")
+print(f"Max probability: {probs.max():.4f}")
+print(f"Mean probability: {probs.mean():.4f}")
+print(f"Std probability: {probs.std():.4f}")
+print(f"Number of samples: {len(probs)}")
 
 # --- 1. Threshold Table ---
 thresholds = np.arange(0.1, 1.0, 0.1)

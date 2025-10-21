@@ -66,7 +66,7 @@ def save_metrics_plot(metrics_df, save_path, best_epoch=None):
     """Plot all metrics (and loss) in a single 2×3 grid figure."""
     from pathlib import Path
     save_path = Path(save_path)
-    metrics_to_plot = ["AUC", "Sensitivity", "Specificity", "Loss", "PPV", "NPV"]
+    metrics_to_plot = ["AUC", "Sensitivity", "Specificity",  "Loss", "PPV", "NPV"]
 
     fig, axes = plt.subplots(2, 3, figsize=(15, 8))
     axes = axes.flatten()
@@ -94,11 +94,9 @@ def save_metrics_plot(metrics_df, save_path, best_epoch=None):
     plt.savefig(save_path / "metrics_overview.png", dpi=150)
     plt.close()
 
-# -----------------------------
 # Training Function
-# -----------------------------
 
-def train(train_csv_path, valid_csv_path, exp_save_root):
+def train(train_csv_path, valid_csv_path, test_csv_path, exp_save_root):
     torch.manual_seed(config.SEED)
     np.random.seed(config.SEED)
     random.seed(config.SEED)
@@ -108,6 +106,8 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
 
     train_df = pandas.read_csv(train_csv_path)
     valid_df = pandas.read_csv(valid_csv_path)
+    test_df = pandas.read_csv(test_csv_path)
+    train_df = pandas.concat([train_df, test_df], ignore_index=True)
 
     print()
     logging.info(f"Number of malignant training samples: {train_df.label.sum()}")
@@ -181,9 +181,7 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
     counter = 0
     metrics_log = []
 
-    # -----------------------------
     # Training Loop
-    # -----------------------------
     for epoch in range(epochs):
         if counter > patience:
             logging.info(f"Model not improving for {patience} epochs")
@@ -192,9 +190,7 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
         logging.info("-" * 10)
         logging.info(f"Epoch {epoch + 1}/{epochs}")
 
-        # -----------------------------
         # Train phase
-        # -----------------------------
         model.train()
         epoch_loss = 0
         step = 0
@@ -212,9 +208,7 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
         train_epoch_loss = epoch_loss / step
         logging.info(f"Epoch {epoch + 1} average train loss: {train_epoch_loss:.7f}")
 
-        # -----------------------------
         # Validation phase
-        # -----------------------------
         model.eval()
         epoch_loss = 0
         step = 0
@@ -234,9 +228,7 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
         valid_epoch_loss = epoch_loss / step
         logging.info(f"Epoch {epoch + 1} average valid loss: {valid_epoch_loss:.7f}")
 
-        # -----------------------------
         # Compute metrics
-        # -----------------------------
         y_pred_np = torch.sigmoid(y_pred.reshape(-1)).cpu().numpy()
         y_true_np = y_true.cpu().numpy()
         valid_metrics = compute_metrics(y_true_np, y_pred_np)
@@ -255,9 +247,7 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
             y_train_true_np = y_train_true.cpu().numpy()
             train_metrics = compute_metrics(y_train_true_np, y_train_pred_np)
 
-        # -----------------------------
         # Log metrics
-        # -----------------------------
         logging.info(f"Epoch {epoch+1} Train Metrics: {train_metrics}")
         logging.info(f"Epoch {epoch+1} Valid Metrics: {valid_metrics}")
 
@@ -269,9 +259,7 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
             **{f"valid_{k}": v for k, v in valid_metrics.items()},
         })
 
-        # -----------------------------
         # Check for improvement
-        # -----------------------------
         auc_metric = valid_metrics["AUC"]
         if auc_metric > best_metric:
             counter = 0
@@ -295,10 +283,7 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
             f"Best AUC: {best_metric:.4f} (epoch {best_metric_epoch})"
         )
 
-
-    # -----------------------------
     # Save final metrics and plots
-    # -----------------------------
     metrics_df = pandas.DataFrame(metrics_log)
     metrics_df.to_csv(exp_save_root / "metrics_log.csv", index=False)
     save_metrics_plot(metrics_df, exp_save_root, best_epoch=best_metric_epoch)
@@ -307,9 +292,8 @@ def train(train_csv_path, valid_csv_path, exp_save_root):
     logging.info(f"Training completed. Best AUC: {best_metric:.4f} at epoch {best_metric_epoch}")
 
 
-# -----------------------------
+
 # Main Entry Point
-# -----------------------------
 
 if __name__ == "__main__":
     experiment_name = f"{config.EXPERIMENT_NAME}"
@@ -319,5 +303,6 @@ if __name__ == "__main__":
     train(
         train_csv_path=config.CSV_DIR_TRAIN,
         valid_csv_path=config.CSV_DIR_VALID,
+        test_csv_path=config.CSV_DIR_TEST,
         exp_save_root=exp_save_root,
     )

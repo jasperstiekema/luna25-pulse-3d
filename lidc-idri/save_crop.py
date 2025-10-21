@@ -15,9 +15,7 @@ input_csv = r"D:\DATA\lidc_all_nodules_radius.csv"
 
 # Output directories for each crop size
 crop_configs = [
-    {"size_mm": 50, "output_dir": r"D:\DATA\lidc crop 50"},
-    {"size_mm": 70, "output_dir": r"D:\DATA\lidc crop 70"},
-    {"size_mm": 100, "output_dir": r"D:\DATA\lidc crop 100"},
+    {"size_mm": 64, "output_dir": r"D:\DATA\lidc crops"},
 ]
 
 # Fixed voxel dimensions
@@ -121,17 +119,15 @@ for idx, row in tqdm(df.iterrows(), total=len(df), desc="Cropping nodules"):
             "size_mm": size_mm,
             "original_center_mm": center_mm_zyx,
             "original_spacing": orig_spacing,
-            "malignancy_score": row["malignancy_score"],
-            "num_radiologists": row["num_radiologists"],
         }
         
         # Save paths
         filename = f"{pid}_nodule_{nid}"
-        img_path = os.path.join(output_dir, "images", f"{filename}.npy")
+        img_path = os.path.join(output_dir, "image", f"{filename}.npy")
         meta_npy_path = os.path.join(output_dir, "metadata", f"{filename}.npy")
         
         # Save image and metadata
-        #np.save(img_path, resampled)
+        np.save(img_path, resampled)
         np.save(meta_npy_path, meta)
 
 print("\n✅ Cropping complete!")

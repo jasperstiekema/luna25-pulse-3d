@@ -6,39 +6,20 @@ from pandas import read_csv, DataFrame
 import sys
 import re
 
-# Add parent directory of the current script (so Python can see /models)
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.Pulse3D import Pulse3D
 from dataloader_own import get_data_loader
 
 
-def extract_auc_from_filename(filename):
-    """
-    Extract AUC value from filename.
-    Handles formats like:
-    - "0.7971_model.pth" → "0.7971"
-    - "auc_0.7971.pth" → "0.7971"
-    - "model_auc_0.8166.pth" → "0.8166"
-    """
-    basename = os.path.splitext(os.path.basename(filename))[0]
-    
-    # Try to find a decimal number that looks like an AUC (0.xxxx)
-    match = re.search(r'0\.\d+', basename)
-    if match:
-        return match.group(0)
-    
-    # Fallback: use the full basename
-    print(f"Warning: Could not extract AUC from {basename}, using full name")
-    return basename
-
 
 def main():
     # Configuration
-    weights_dir = r"D:\PULSE\results\auc check\lr_1e-4_auc_check-3D-20251009"
+    # Path to the base directory containing fold_0, fold_1, etc.
+    weights_base_dir = r"D:\PULSE\results\cv check\1e-4_cv"
     csv_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
     data_dir = r"D:\DATA\own dataset pulse crops"
-    output_csv = r"D:\PULSE\results classification\code check\1e-4_auc_check.csv"
+    output_csv = r"D:\PULSE\results classification\code check\all-fold_predictions_1.csv"
 
     # Load data
     df = read_csv(csv_path)
@@ -55,33 +36,42 @@ def main():
         size_px=64,
     )
     
-    # Find all model weight files
-    weight_files = glob.glob(os.path.join(weights_dir, "*.pth"))
+    # --- MODIFIED SECTION: Find model weight files within fold directories ---
     
+    # Find all fold directories and sort them
+    fold_dirs = sorted(glob.glob(os.path.join(weights_base_dir, "fold_*")))
+    
+    # Create a list of paths to the best model in each fold
+    weight_files = []
+    for fold_dir in fold_dirs:
+        model_path = os.path.join(fold_dir, "best_metric_model.pth")
+        if os.path.exists(model_path):
+            weight_files.append(model_path)
+        else:
+            print(f"Warning: 'best_metric_model.pth' not found in {fold_dir}")
+
     if not weight_files:
-        print(f"No .pth files found in {weights_dir}")
+        print(f"No 'best_metric_model.pth' files found in any 'fold_*' subdirectories of {weights_base_dir}")
         return
-    
-    # Sort by AUC value for consistent ordering
-    weight_files = sorted(weight_files, key=lambda x: float(extract_auc_from_filename(x)))
-    
+
     print(f"Found {len(weight_files)} model weight files:")
     for wf in weight_files:
-        auc_val = extract_auc_from_filename(wf)
-        print(f"  - {os.path.basename(wf)} → auc_{auc_val}")
+        # The fold name is the name of the parent directory
+        fold_name = os.path.basename(os.path.dirname(wf))
+        print(f"  - Found in '{fold_name}': {os.path.basename(wf)}")
     
+    # --- END MODIFIED SECTION ---
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nUsing device: {device}")
-    
-    # Dictionary to store all predictions
-    # Structure: {patient_id: {"true_label": X, "auc_0.7971": Y, ...}}
+
     all_predictions = {}
     
-    # Create mapping of weight files to model names for later
+    # Create mapping of weight files to model names (e.g., 'fold_0_prob_cancer')
     weight_to_modelname = {}
     for weight_file in weight_files:
-        auc_value = extract_auc_from_filename(weight_file)
-        model_name = f"auc_{auc_value}"
+        model_name = f"{os.path.basename(os.path.dirname(weight_file))}_prob_cancer"
+
         weight_to_modelname[weight_file] = model_name
     
     # Evaluate each model
@@ -90,7 +80,7 @@ def main():
         
         print(f"\n{'='*60}")
         print(f"Evaluating model: {model_name}")
-        print(f"Weight file: {os.path.basename(weight_file)}")
+        print(f"Weight file: {weight_file}")
         print(f"{'='*60}")
         
         # Load model
@@ -110,7 +100,6 @@ def main():
                 labels = batch["label"].to(device).float()
                 outputs = model(images)
                 probs = torch.sigmoid(outputs).squeeze(1)
-                
                 batch_filenames = batch["path"]
                 
                 for i in range(images.size(0)):
@@ -129,7 +118,7 @@ def main():
                     if patient_id not in all_predictions:
                         all_predictions[patient_id] = {"true_label": label}
                     
-                    # Store prediction for this model using the SAME key
+                    # Store prediction for this model using the model_name (e.g., 'fold_0_prob_cancer')
                     all_predictions[patient_id][model_name] = prob
                     batch_count += 1
                 
@@ -158,7 +147,7 @@ def main():
     for patient_id, data in all_predictions.items():
         row = {"patient_id": patient_id}
         
-        # Add predictions from each model (in sorted order)
+        # Add predictions from each model (in sorted fold order)
         for weight_file in weight_files:
             model_name = weight_to_modelname[weight_file]
             row[model_name] = data.get(model_name, np.nan)
@@ -181,6 +170,8 @@ def main():
         print(results_df.isna().sum())
     
     # Save to CSV
+    # Ensure the output directory exists
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     results_df.to_csv(output_csv, index=False)
     
     print(f"\nEvaluation complete!")
@@ -200,15 +191,17 @@ def main():
     print(f"Label distribution:")
     print(results_df["true_label"].value_counts())
     
-    # Print AUC statistics
+    # --- MODIFIED SECTION: Print prediction stats per fold ---
     print(f"\nPrediction ranges per model:")
     for col in results_df.columns:
-        if col.startswith("auc_"):
+        # This condition still works since the columns start with 'fold_'
+        if col.startswith("fold_"):
             valid_preds = results_df[col].dropna()
             if len(valid_preds) > 0:
                 print(f"  {col}: [{valid_preds.min():.4f}, {valid_preds.max():.4f}] (mean={valid_preds.mean():.4f})")
             else:
                 print(f"  {col}: No valid predictions")
+    # --- END MODIFIED SECTION ---
 
 
 if __name__ == "__main__":

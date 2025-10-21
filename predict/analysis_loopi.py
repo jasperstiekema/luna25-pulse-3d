@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score
 
 # --- Paths ---
-csv_path = r"D:\PULSE\results classification\multi_model_predictions_1e-4.csv"
+csv_path = r"D:\PULSE\results classification\code check\1e-4_auc_check.csv"
 maxdist_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"  # CSV with max_dist_mm column
 
 # --- Load CSV files ---
