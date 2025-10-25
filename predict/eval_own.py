@@ -4,20 +4,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pandas import read_csv, DataFrame
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from models.Pulse3D import Pulse3D
-from dataloader_own import get_data_loader
+from models.Pulse3Dp import Pulse3D
+from dataloader_own import get_data_loader_own
 
 FOV = 50
-model_path = r"D:\PULSE\results\auc check\lr_1e-4_auc_check-3D-20251009\0.8788_model.pth"
+model_path = r"D:\PULSE\results\patch check\both_1e-4\best_metric_model.pth"
 csv_dir = r"D:/DATA/LBxSF_labeled_segmented_radius.csv"
 data_dir = rf"D:/DATA/own dataset pulse crops"
 output_dir = rf"D:/PULSE/own crops {FOV} vis"
-csv_output_dir = rf"D:/PULSE/results classification/cv check/golden_standard.csv"
+csv_output_dir = rf"D:/PULSE/results classification/patch check/both_predictions.csv"
 
 def main():
     df = read_csv(csv_dir)
 
-    data_loader = get_data_loader(
+    data_loader = get_data_loader_own(
         data_dir,
         df,
         mode="3D",

@@ -21,8 +21,8 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 from dataloader_cls import get_data_loader
-from experiment_config import config
-from models.Pulse3D import Pulse3D
+from experiment_config_original import config
+from models.Pulse3Dp import Pulse3D
 from tensorboard_visuals import (
     log_conv_filters,
     log_feature_maps,
@@ -802,11 +802,12 @@ if __name__ == "__main__":
     # For cross-validation, we use a single CSV file containing all data
     csv_path = config.CSV_DIR / "all_data.csv"
     
-    # If all_data.csv doesn't exist, create it by combining train and valid CSVs
+    # If all_data.csv doesn't exist, create it by combining train, valid, and test CSVs
     if not csv_path.exists():
         train_df = pd.read_csv(config.CSV_DIR_TRAIN)
         valid_df = pd.read_csv(config.CSV_DIR_VALID)
-        all_df = pd.concat([train_df, valid_df], ignore_index=True)
+        test_df = pd.read_csv(config.CSV_DIR_TEST)
+        all_df = pd.concat([train_df, valid_df, test_df], ignore_index=True)
         all_df.to_csv(csv_path, index=False)
         logging.info(f"Created combined dataset at {csv_path}")
     

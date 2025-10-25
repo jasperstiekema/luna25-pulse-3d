@@ -8,7 +8,7 @@ import torch
 
 # -------------------- Config --------------------
 FOV = 50
-csv_path = rf"D:/PULSE/results classification/cv check/all_folds_train_pulse3d.csv"
+csv_path = rf"D:\PULSE\results classification\pulse3d check\patch_cv.csv"
 dist_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
 max_dist_threshold = 20000  # mm
 fixed_threshold = 0.5

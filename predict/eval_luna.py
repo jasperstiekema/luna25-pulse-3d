@@ -5,7 +5,7 @@ from pandas import read_csv, DataFrame
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.Pulse3D import Pulse3D
-from dataloader import get_data_loader
+from dataloader import get_data_loader_test
 
 FOV = 50
 model_path = r"D:\PULSE\results\auc check\lr_1e-4_auc_check-3D-20251009\0.8788_model.pth"
@@ -19,7 +19,7 @@ def main():
     df = read_csv(csv_dir)
 
     # --- Initialize dataloader ---
-    data_loader = get_data_loader(
+    data_loader = get_data_loader_test(
         data_dir,
         df,
         mode="3D",

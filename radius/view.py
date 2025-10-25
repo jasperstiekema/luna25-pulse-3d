@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-data_dir = r"D:\DATA\own dataset pulse crops\image"
+data_dir = r"D:/PULSE/luna_inputs_50mm"
 npy_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".npy")])
 
 if not npy_files:

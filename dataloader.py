@@ -219,7 +219,7 @@ class CTCaseDataset(data.Dataset):
 
         self.data_dir = Path(data_dir)
         self.dataset = dataset
-        self.patch_size = config.PATCH_SIZE
+        self.patch_size = (64,128,128)
         self.rotations = rotations
         self.translations = translations
         self.size_px = size_px
@@ -287,6 +287,7 @@ class CTCaseDataset(data.Dataset):
             "image": torch.from_numpy(patch),
             "label": target.long(),
             "ID": annotation_id,
+            "path": str(image_path),
         }
         return sample
 
@@ -394,7 +395,7 @@ def extract_patch(
 
     return patch
 
-def get_data_loader(
+def get_data_loader_test(
     data_dir,
     dataset,
     mode="2D",
@@ -441,7 +442,7 @@ def test():
 
     dataset = pd.read_csv(config.CSV_DIR_VALID)
 
-    train_loader = get_data_loader(
+    train_loader = get_data_loader_test(
         data_dir=config.DATADIR,
         dataset=dataset,
         mode=config.MODE,

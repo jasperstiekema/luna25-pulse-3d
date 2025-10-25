@@ -8,23 +8,23 @@ import re
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from models.Pulse3D import Pulse3D
-from dataloader_own import get_data_loader
+from models.Pulse3Dp import Pulse3D
+from dataloader_own import get_data_loader_own
 
 
 
 def main():
     # Configuration
     # Path to the base directory containing fold_0, fold_1, etc.
-    weights_base_dir = r"D:\PULSE\results\cv check\1e-4_cv"
+    weights_base_dir = r"D:\PULSE\results\pulse3d check\original_experiment_patch-Pulse3D-20251023"
     csv_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
     data_dir = r"D:\DATA\own dataset pulse crops"
-    output_csv = r"D:\PULSE\results classification\code check\all-fold_predictions_1.csv"
+    output_csv = r"D:\PULSE\results classification\pulse3d check\patch_cv.csv"
 
     # Load data
     df = read_csv(csv_path)
     
-    data_loader = get_data_loader(
+    data_loader = get_data_loader_own(
         data_dir,
         df,
         mode="3D",

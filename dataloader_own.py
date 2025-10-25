@@ -392,7 +392,7 @@ def extract_patch(
 
     return patch
 
-def get_data_loader(
+def get_data_loader_own(
     data_dir,
     dataset,
     mode="2D",

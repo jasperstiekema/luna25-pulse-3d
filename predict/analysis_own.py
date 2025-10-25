@@ -41,7 +41,7 @@ def plot_confusion_matrix(labels, preds, threshold):
 
 # Path to the CSV file
 FOV = 50
-csv_path = r"D:/PULSE/results classification/cv check/golden_standard.csv"
+csv_path = r"D:\PULSE\results classification\patch check\patch_predictions.csv"
 dist_path = r"D:\DATA\LBxSF_labeled_segmented_radius.csv"
 
 # Load files
